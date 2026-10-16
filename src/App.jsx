@@ -3,7 +3,7 @@ import {
   Plus, Minus, Trash2, RotateCcw, Share2, Check, 
   CreditCard, Banknote, Smartphone, MapPin, 
   DollarSign, ShoppingBag, ArrowRightLeft, ShieldAlert,
-  ChevronRight, Calendar, Info, Sparkles, Settings, Edit2, X, RefreshCw
+  Settings, Edit2, X, RefreshCw, Sparkles, Percent
 } from 'lucide-react';
 
 // Varsayılan Menü Listesi (Fabrika Ayarları)
@@ -37,7 +37,7 @@ export default function App() {
   });
 
   // Ürün Ekleme / Düzenleme Modal State
-  const [editingProduct, setEditingProduct] = useState(null); // null veya { id, name, price, category }
+  const [editingProduct, setEditingProduct] = useState(null);
   const [formName, setFormName] = useState('');
   const [formPrice, setFormPrice] = useState('');
   const [formCategory, setFormCategory] = useState('durum');
@@ -45,10 +45,14 @@ export default function App() {
 
   // Sipariş Sepeti: { [itemId]: count }
   const [cart, setCart] = useState({});
-  // Mesafe Tipi: 'yakin' (+40 TL/dürüm) | 'uzak' (+50 TL/dürüm)
-  const [distanceType, setDistanceType] = useState('yakin');
-  // Manuel Paket Ücreti Override
+
+  // Dinamik Dürüm Başı Paket Ücreti (Varsayılan 40 TL)
+  const [perDurumFee, setPerDurumFee] = useState(40);
+  // Manuel Sabit Paket Ücreti Override (50, 100, 200 TL)
   const [overrideDeliveryFee, setOverrideDeliveryFee] = useState(null);
+
+  // Patron İndirimi / Yuvarlama Tutarı (TL)
+  const [patronDiscount, setPatronDiscount] = useState('');
 
   // Parçalı Ödeme Dağılımı
   const [payCash, setPayCash] = useState(0);
@@ -107,7 +111,7 @@ export default function App() {
     return drinkProducts.reduce((sum, item) => sum + (cart[item.id] || 0), 0);
   }, [cart, drinkProducts]);
 
-  // Restoran Menü Satış Tutarı (Patron kazancı)
+  // Restoran Brüt Menü Satış Tutarı
   const restaurantBaseTotal = useMemo(() => {
     let total = 0;
     products.forEach(item => {
@@ -117,25 +121,36 @@ export default function App() {
     return total;
   }, [cart, products]);
 
+  // Patron İndirimi Sayısal Değer
+  const numericDiscount = useMemo(() => {
+    const val = Number(patronDiscount);
+    return isNaN(val) || val < 0 ? 0 : val;
+  }, [patronDiscount]);
+
+  // İndirim düşülmüş Patron Net Menü Tutarı (Asla sıfırın altına inmez)
+  const effectiveRestaurantTotal = useMemo(() => {
+    return Math.max(0, restaurantBaseTotal - numericDiscount);
+  }, [restaurantBaseTotal, numericDiscount]);
+
   // Kurye Brüt Paket Ücreti
   const calculatedDeliveryFee = useMemo(() => {
     if (overrideDeliveryFee !== null) {
       return overrideDeliveryFee;
     }
-    const perDurumFee = distanceType === 'uzak' ? 50 : 40;
+    const rate = Number(perDurumFee) || 0;
     if (durumCount === 0) {
       if (restaurantBaseTotal > 0) {
-        return distanceType === 'uzak' ? 200 : (restaurantBaseTotal >= 400 ? 100 : 50);
+        return restaurantBaseTotal >= 400 ? 100 : 50;
       }
       return 0;
     }
-    return durumCount * perDurumFee;
-  }, [durumCount, distanceType, overrideDeliveryFee, restaurantBaseTotal]);
+    return durumCount * rate;
+  }, [durumCount, perDurumFee, overrideDeliveryFee, restaurantBaseTotal]);
 
-  // Müşteriden Alınacak Toplam Tutar
-  const customerTotal = restaurantBaseTotal + calculatedDeliveryFee;
+  // Müşteriden Alınacak Toplam Tutar: (Patron Menü - İndirim) + Kurye Paketi
+  const customerTotal = effectiveRestaurantTotal + calculatedDeliveryFee;
 
-  // Sepet değiştiğinde ödeme tutarını varsayılan olarak Nakit'e eşitle
+  // Sepet veya indirim değiştiğinde ödemeyi varsayılan olarak Nakit'e eşitle
   useEffect(() => {
     setPayCash(customerTotal);
     setPayIban(0);
@@ -146,7 +161,7 @@ export default function App() {
   const totalEnteredPayment = (Number(payCash) || 0) + (Number(payIban) || 0) + (Number(payPos) || 0);
   const paymentDiff = customerTotal - totalEnteredPayment;
 
-  // POS Vergi Hesaplaması Önizleme
+  // POS Vergi Hesaplaması Önizleme (%10 KDV + %20 Gelir Vergisi = %30)
   const singleOrderTaxPreview = useMemo(() => {
     if (customerTotal <= 0 || !payPos) return { posCut: 0, netCourier: calculatedDeliveryFee };
     const posRatio = Math.min(1, Math.max(0, (Number(payPos) || 0) / customerTotal));
@@ -217,7 +232,6 @@ export default function App() {
     }
 
     if (editingProduct) {
-      // Güncelleme
       setProducts(prev => prev.map(p => p.id === editingProduct.id ? {
         ...p,
         name: formName.trim(),
@@ -226,7 +240,6 @@ export default function App() {
       } : p));
       showToast(`${formName} güncellendi.`);
     } else {
-      // Yeni Ürün
       const newProd = {
         id: `custom_${Date.now()}`,
         name: formName.trim(),
@@ -242,7 +255,6 @@ export default function App() {
   const handleDeleteProduct = (id, name) => {
     if (window.confirm(`"${name}" ürününü menüden silmek istediğinize emin misiniz?`)) {
       setProducts(prev => prev.filter(p => p.id !== id));
-      // Sepette varsa temizle
       setCart(prev => {
         const copy = { ...prev };
         delete copy[id];
@@ -261,7 +273,7 @@ export default function App() {
 
   // Siparişi Kaydet
   const handleSaveOrder = () => {
-    if (customerTotal <= 0) {
+    if (customerTotal <= 0 && restaurantBaseTotal <= 0) {
       showToast('Lütfen en az bir ürün seçiniz!');
       return;
     }
@@ -297,11 +309,13 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
       date: new Date().toLocaleDateString('tr-TR'),
       note: orderNote.trim() || `Paket #${orders.length + 1}`,
-      distanceType,
+      perDurumFee: overrideDeliveryFee ? 'Sabit' : (Number(perDurumFee) || 0),
       durumCount,
       drinksCount,
       items: itemsSummary,
       restaurantBaseTotal,
+      patronDiscount: numericDiscount,
+      effectiveRestaurantTotal,
       grossCourierFee: calculatedDeliveryFee,
       customerTotal,
       payments: {
@@ -316,6 +330,7 @@ export default function App() {
     setOrders([newOrder, ...orders]);
     setCart({});
     setOrderNote('');
+    setPatronDiscount('');
     setOverrideDeliveryFee(null);
     setPayCash(0);
     setPayIban(0);
@@ -337,7 +352,9 @@ export default function App() {
       acc.totalDurum += order.durumCount || 0;
       acc.totalDrinks += order.drinksCount || 0;
       acc.totalCustomerRevenue += order.customerTotal || 0;
-      acc.totalRestaurantRevenue += order.restaurantBaseTotal || 0;
+      acc.totalRestaurantRaw += order.restaurantBaseTotal || 0;
+      acc.totalDiscount += order.patronDiscount || 0;
+      acc.totalRestaurantNet += order.effectiveRestaurantTotal ?? (order.restaurantBaseTotal || 0);
       acc.totalGrossCourier += order.grossCourierFee || 0;
       acc.totalTaxDeduction += order.posTaxDeduction || 0;
       acc.totalNetCourier += order.netCourierFee || 0;
@@ -350,7 +367,9 @@ export default function App() {
       totalDurum: 0,
       totalDrinks: 0,
       totalCustomerRevenue: 0,
-      totalRestaurantRevenue: 0,
+      totalRestaurantRaw: 0,
+      totalDiscount: 0,
+      totalRestaurantNet: 0,
       totalGrossCourier: 0,
       totalTaxDeduction: 0,
       totalNetCourier: 0,
@@ -368,12 +387,16 @@ export default function App() {
     text += `📦 *Toplam Paket:* ${summary.totalOrders} adet\n`;
     text += `🌯 *Dürüm Adedi:* ${summary.totalDurum} adet\n`;
     text += `🥤 *İçecek Adedi:* ${summary.totalDrinks} adet\n\n`;
+    text += `🏢 *Restoran Brüt Satış:* ${summary.totalRestaurantRaw.toLocaleString('tr-TR')} TL\n`;
+    if (summary.totalDiscount > 0) {
+      text += `🔻 *Patron İndirimi / Yuvarlama:* -${summary.totalDiscount.toLocaleString('tr-TR')} TL\n`;
+    }
+    text += `🏢 *Restoran Net Menü (Patron):* ${summary.totalRestaurantNet.toLocaleString('tr-TR')} TL\n\n`;
     text += `💳 *TAHSİLAT DAĞILIMI:*\n`;
     text += `• Nakit: ${summary.totalCash.toLocaleString('tr-TR')} TL\n`;
     text += `• IBAN: ${summary.totalIban.toLocaleString('tr-TR')} TL\n`;
     text += `• POS (Kart): ${summary.totalPos.toLocaleString('tr-TR')} TL\n`;
     text += `• *Genel Tahsilat:* ${summary.totalCustomerRevenue.toLocaleString('tr-TR')} TL\n\n`;
-    text += `🏢 *Restoran Satış Tutarı (Patron):* ${summary.totalRestaurantRevenue.toLocaleString('tr-TR')} TL\n`;
     text += `💰 *Kurye Brüt Paket Kazancı:* ${summary.totalGrossCourier.toLocaleString('tr-TR')} TL\n`;
     text += `🧾 *POS Vergi Kesintisi (%10 KDV + %20 GV):* -${summary.totalTaxDeduction.toFixed(1)} TL\n`;
     text += `⭐ *KURYE NET HAK EDİŞİ:* ${summary.totalNetCourier.toFixed(1)} TL\n\n`;
@@ -401,7 +424,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans select-none pb-24 md:pb-6">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans select-none pb-36">
       {/* Üst Bilgi Barı */}
       <header className="sticky top-0 z-40 bg-neutral-900/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 shadow-lg">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
@@ -409,7 +432,7 @@ export default function App() {
             <span className="text-2xl">🛵</span>
             <div>
               <h1 className="text-base font-bold text-white tracking-wide leading-tight">Kurye Takip & POS</h1>
-              <p className="text-xs text-amber-400 font-medium">Hakediş & Kasa Mutabakatı</p>
+              <p className="text-xs text-amber-400 font-medium">Dürüm Başı: {overrideDeliveryFee ? 'Sabit' : `${perDurumFee}₺`}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -449,48 +472,79 @@ export default function App() {
         {activeTab === 'new_order' && (
           <div className="space-y-4">
             
-            {/* Mesafe Seçimi Toggle */}
-            <div className="bg-neutral-900 p-2 rounded-2xl border border-neutral-800 shadow-md">
-              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider block px-2 mb-1.5">
-                Mesafe & Paket Tarifesi
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setDistanceType('yakin'); setOverrideDeliveryFee(null); }}
-                  className={`p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                    distanceType === 'yakin' && overrideDeliveryFee === null
-                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg shadow-emerald-950 font-bold'
-                      : 'bg-neutral-800/70 text-neutral-300 border-neutral-700 hover:bg-neutral-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-1 text-sm font-semibold">
-                    <MapPin className="w-4 h-4" />
-                    <span>Yakın Mesafe</span>
-                  </div>
-                  <span className="text-xs opacity-90 mt-0.5">Dürüm başı +40 TL</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setDistanceType('uzak'); setOverrideDeliveryFee(null); }}
-                  className={`p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                    distanceType === 'uzak' && overrideDeliveryFee === null
-                      ? 'bg-amber-600 text-white border-amber-400 shadow-lg shadow-amber-950 font-bold'
-                      : 'bg-neutral-800/70 text-neutral-300 border-neutral-700 hover:bg-neutral-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-1 text-sm font-semibold">
-                    <MapPin className="w-4 h-4" />
-                    <span>Uzak Mesafe</span>
-                  </div>
-                  <span className="text-xs opacity-90 mt-0.5">Dürüm başı +50 TL (Havalimanı)</span>
-                </button>
+            {/* DİNAMİK DÜRÜM BAŞI PAKET TARİFESİ */}
+            <div className="bg-neutral-900 p-3 rounded-2xl border border-neutral-800 shadow-md space-y-2">
+              <div className="flex justify-between items-center px-1">
+                <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                  Dürüm Başı Paket Ücreti
+                </label>
+                <span className="text-xs text-amber-400 font-mono font-bold">
+                  {overrideDeliveryFee !== null ? `${overrideDeliveryFee}₺ (Sabit)` : `${durumCount} Adet × ${perDurumFee}₺ = ${durumCount * (Number(perDurumFee) || 0)}₺`}
+                </span>
               </div>
 
-              {/* Hızlı Özel Paket Ücreti Override Seçenekleri */}
-              <div className="mt-2.5 pt-2 border-t border-neutral-800/80 flex items-center justify-between text-xs px-1">
-                <span className="text-neutral-400 text-[11px]">Hızlı Sabit Paket:</span>
+              {/* Hızlı Butonlar + Elle Giriş Alanı */}
+              <div className="grid grid-cols-4 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setPerDurumFee(20); setOverrideDeliveryFee(null); }}
+                  className={`py-2 px-1 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center transition-all ${
+                    perDurumFee === 20 && overrideDeliveryFee === null
+                      ? 'bg-amber-500 text-black border-amber-400 shadow-md font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-750'
+                  }`}
+                >
+                  <span>20₺</span>
+                  <span className="text-[9px] opacity-80">Komşu</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setPerDurumFee(40); setOverrideDeliveryFee(null); }}
+                  className={`py-2 px-1 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center transition-all ${
+                    perDurumFee === 40 && overrideDeliveryFee === null
+                      ? 'bg-amber-500 text-black border-amber-400 shadow-md font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-750'
+                  }`}
+                >
+                  <span>40₺</span>
+                  <span className="text-[9px] opacity-80">Standart</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setPerDurumFee(50); setOverrideDeliveryFee(null); }}
+                  className={`py-2 px-1 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center transition-all ${
+                    perDurumFee === 50 && overrideDeliveryFee === null
+                      ? 'bg-amber-500 text-black border-amber-400 shadow-md font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-750'
+                  }`}
+                >
+                  <span>50₺</span>
+                  <span className="text-[9px] opacity-80">Uzak/Hvlmn</span>
+                </button>
+
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={perDurumFee}
+                    onChange={(e) => {
+                      setPerDurumFee(Number(e.target.value) || 0);
+                      setOverrideDeliveryFee(null);
+                    }}
+                    placeholder="Özel ₺"
+                    className="w-full h-full text-center text-xs font-mono font-bold bg-neutral-950 border border-neutral-700 rounded-xl text-amber-400 focus:outline-none focus:border-amber-500 py-1"
+                  />
+                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] text-neutral-500 pointer-events-none">
+                    Elle Yaz
+                  </span>
+                </div>
+              </div>
+
+              {/* Sabit Paket Ücreti Override Seçenekleri (50, 100, 200 TL) */}
+              <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-xs px-1">
+                <span className="text-neutral-400 text-[11px]">Sabit Paket:</span>
                 <div className="flex gap-1.5">
                   {[50, 100, 200].map(fee => (
                     <button
@@ -644,8 +698,34 @@ export default function App() {
               )}
             </div>
 
-            {/* Müşteri Notu / Adres */}
-            <div className="bg-neutral-900 p-3 rounded-2xl border border-neutral-800 shadow-md">
+            {/* PATRON İNDİRİMİ / DÜZLEME & MÜŞTERİ NOTU */}
+            <div className="bg-neutral-900 p-3 rounded-2xl border border-neutral-800 shadow-md space-y-2.5">
+              <div className="flex items-center justify-between px-1">
+                <label className="text-[11px] font-semibold text-rose-400 flex items-center gap-1.5">
+                  <Percent className="w-3.5 h-3.5" />
+                  Patron İndirimi / Yuvarlama (TL)
+                </label>
+                <span className="text-[10px] text-neutral-500">Sadece menü cirosundan düşer</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  placeholder="Örn: 40 (1040 yerine düz 1000 TL alındığında)"
+                  value={patronDiscount}
+                  onChange={(e) => setPatronDiscount(e.target.value)}
+                  className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-3 py-2 text-xs font-mono text-rose-300 placeholder-neutral-500 focus:outline-none focus:border-rose-500 transition"
+                />
+                {numericDiscount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPatronDiscount('')}
+                    className="px-2.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs"
+                  >
+                    Temizle
+                  </button>
+                )}
+              </div>
+
               <input
                 type="text"
                 placeholder="Not / Adres (Örn: Daire 4, Ahmet Bey, Havalimanı vb.)"
@@ -660,16 +740,19 @@ export default function App() {
               <div className="grid grid-cols-3 gap-2 pb-3 border-b border-neutral-800 text-center">
                 <div className="bg-neutral-950/60 p-2 rounded-xl">
                   <div className="text-[10px] text-neutral-400 font-medium">Patron Menü</div>
-                  <div className="text-sm font-bold text-white font-mono mt-0.5">{restaurantBaseTotal} TL</div>
+                  <div className="text-sm font-bold text-white font-mono mt-0.5">{effectiveRestaurantTotal} TL</div>
+                  {numericDiscount > 0 && (
+                    <div className="text-[9px] text-rose-400 line-through font-mono">{restaurantBaseTotal} TL</div>
+                  )}
                 </div>
                 <div className="bg-neutral-950/60 p-2 rounded-xl border border-amber-500/30">
                   <div className="text-[10px] text-amber-400 font-medium">Kurye Brüt Paket</div>
                   <div className="text-sm font-bold text-amber-400 font-mono mt-0.5">+{calculatedDeliveryFee} TL</div>
                   <div className="text-[9px] text-neutral-400">
-                    {overrideDeliveryFee ? 'Sabit' : `${durumCount} x ${distanceType === 'uzak' ? 50 : 40}₺`}
+                    {overrideDeliveryFee ? 'Sabit' : `${durumCount} × ${perDurumFee}₺`}
                   </div>
                 </div>
-                <div className="bg-neutral-950/60 p-2 rounded-xl">
+                <div className="bg-neutral-950/60 p-2 rounded-xl border border-emerald-500/30">
                   <div className="text-[10px] text-emerald-400 font-medium">Tahsil Edilecek</div>
                   <div className="text-sm font-bold text-emerald-400 font-mono mt-0.5">{customerTotal} TL</div>
                 </div>
@@ -823,13 +906,14 @@ export default function App() {
                     <div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold text-white">{ord.note}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          ord.distanceType === 'uzak' 
-                            ? 'bg-amber-950 text-amber-300 border border-amber-800' 
-                            : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                        }`}>
-                          {ord.distanceType === 'uzak' ? 'Uzak Mesafe' : 'Yakın Mesafe'}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-amber-950 text-amber-300 border border-amber-800">
+                          {ord.perDurumFee === 'Sabit' ? 'Sabit Paket' : `Birim: ${ord.perDurumFee}₺`}
                         </span>
+                        {ord.patronDiscount > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-rose-950 text-rose-300 border border-rose-800">
+                            İndirim: -{ord.patronDiscount}₺
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10px] text-neutral-500 font-mono">{ord.timestamp}</span>
                     </div>
@@ -959,9 +1043,25 @@ export default function App() {
                 </div>
 
                 <div className="flex justify-between items-center py-1 border-b border-neutral-800/60">
-                  <span className="text-neutral-400">Patron Restoran Satış Hacmi:</span>
+                  <span className="text-neutral-400">Restoran Brüt Menü Satışı:</span>
                   <span className="font-bold font-mono text-neutral-200">
-                    {summary.totalRestaurantRevenue.toLocaleString('tr-TR')} TL
+                    {summary.totalRestaurantRaw.toLocaleString('tr-TR')} TL
+                  </span>
+                </div>
+
+                {summary.totalDiscount > 0 && (
+                  <div className="flex justify-between items-center py-1 border-b border-neutral-800/60 text-rose-300">
+                    <span className="flex items-center gap-1">Patron İndirimi / Yuvarlama:</span>
+                    <span className="font-bold font-mono">
+                      -{summary.totalDiscount.toLocaleString('tr-TR')} TL
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center py-1 border-b border-neutral-800/60">
+                  <span className="text-neutral-400">Patron Net Menü Cirosu:</span>
+                  <span className="font-bold font-mono text-white">
+                    {summary.totalRestaurantNet.toLocaleString('tr-TR')} TL
                   </span>
                 </div>
 
