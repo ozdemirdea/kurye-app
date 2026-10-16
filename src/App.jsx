@@ -127,7 +127,7 @@ export default function App() {
     return isNaN(val) || val < 0 ? 0 : val;
   }, [patronDiscount]);
 
-  // İndirim düşülmüş Patron Net Menü Tutarı (Asla sıfırın altına inmez)
+  // İndirim düşülmüş Patron Net Menü Tutarı
   const effectiveRestaurantTotal = useMemo(() => {
     return Math.max(0, restaurantBaseTotal - numericDiscount);
   }, [restaurantBaseTotal, numericDiscount]);
@@ -379,7 +379,7 @@ export default function App() {
     });
   }, [orders]);
 
-  // IBAN kuryenin şahsi hesabına yattığı için Nakit + IBAN kurye üzerindeki para sayılır[cite: 17]
+  // IBAN kurye hesabına yattığı için Nakit + IBAN kuryenin elindeki para olarak kabul edilir
   const totalCourierCollected = summary.totalCash + summary.totalIban;
   const cashDifference = totalCourierCollected - summary.totalNetCourier;
 
@@ -403,7 +403,7 @@ export default function App() {
     text += `🧾 *POS Vergi Kesintisi (%10 KDV + %20 GV):* -${summary.totalTaxDeduction.toFixed(1)} TL\n`;
     text += `⭐ *KURYE NET HAK EDİŞİ:* ${summary.totalNetCourier.toFixed(1)} TL\n\n`;
     text += `🤝 *KASA MUTABAKATI & HESAPLAŞMA:*\n`;
-    text += `• Kurye Üzerindeki (Nakit + IBAN): ${totalCourierCollected.toLocaleString('tr-TR')} TL\n`;
+    text += `• Kurye Cebindeki (Nakit + IBAN): ${totalCourierCollected.toLocaleString('tr-TR')} TL\n`;
     text += `• Kurye Net Kazancı: ${summary.totalNetCourier.toFixed(1)} TL\n`;
     
     if (cashDifference > 0) {
@@ -680,7 +680,7 @@ export default function App() {
                             disabled={qty === 0}
                             className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-20 text-white flex items-center justify-center active:scale-95 transition"
                           >
-                            <Minus className="w-3.5 h-3.5" />
+                            <Minus className="w-3 h-3" />
                           </button>
                           <span className="font-mono font-bold text-xs text-white">
                             {qty}
@@ -690,7 +690,7 @@ export default function App() {
                             onClick={() => updateQuantity(item.id, 1)}
                             className="w-7 h-7 rounded-lg bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center font-bold active:scale-95 transition"
                           >
-                            <Plus className="w-3.5 h-3.5" />
+                            <Plus className="w-3 h-3" />
                           </button>
                         </div>
                       </div>
@@ -997,7 +997,7 @@ export default function App() {
                       {cashDifference.toFixed(1)} TL
                     </div>
                     <p className="text-[11px] text-neutral-400 mt-1">
-                      Üzerinizde toplam <strong className="text-white font-mono">{totalCourierCollected} TL</strong> (Nakit: {summary.totalCash} TL, IBAN: {summary.totalIban} TL) tahsilat var. Net hak edişiniz olan <strong className="text-emerald-400 font-mono">{summary.totalNetCourier.toFixed(1)} TL</strong>'yi alıp kalanı dükkana teslim edeceksiniz.
+                      Üzerinizde toplam <strong className="text-white font-mono">{totalCourierCollected.toLocaleString('tr-TR')} TL</strong> (Nakit: {summary.totalCash.toLocaleString('tr-TR')} TL, IBAN: {summary.totalIban.toLocaleString('tr-TR')} TL) tahsilat var. Kendi net hak edişiniz olan <strong className="text-emerald-400 font-mono">{summary.totalNetCourier.toFixed(1)} TL</strong>'yi alıp kalanını dükkan kasasına teslim edeceksiniz.
                     </p>
                   </div>
                 ) : cashDifference < 0 ? (
@@ -1007,7 +1007,7 @@ export default function App() {
                       {Math.abs(cashDifference).toFixed(1)} TL
                     </div>
                     <p className="text-[11px] text-neutral-400 mt-1">
-                      POS ağırlıklı tahsilat yapıldığı için üzerinizdeki tahsilat (<span className="text-white font-mono">{totalCourierCollected} TL</span>) net hak edişinizi karşılamıyor. Patron aradaki farkı kuryeye ödemelidir.
+                      POS ağırlıklı tahsilat yapıldığı için üzerinizdeki tahsilat (<span className="text-white font-mono">{totalCourierCollected.toLocaleString('tr-TR')} TL</span>) net hak edişinizi karşılamıyor. Patron aradaki farkı kuryeye ödemelidir.
                     </p>
                   </div>
                 ) : (
