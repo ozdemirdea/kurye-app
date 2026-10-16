@@ -3,7 +3,7 @@ import {
   Plus, Minus, Trash2, RotateCcw, Share2, Check, 
   CreditCard, Banknote, Smartphone, MapPin, 
   DollarSign, ShoppingBag, ArrowRightLeft, ShieldAlert,
-  Settings, Edit2, X, RefreshCw, Sparkles, Percent
+  Settings, Edit2, X, RefreshCw, Sparkles, Percent, Calendar, History, ChevronRight
 } from 'lucide-react';
 
 // Varsayılan Menü Listesi (Fabrika Ayarları)
@@ -23,7 +23,7 @@ const DEFAULT_MENU_ITEMS = [
 ];
 
 export default function App() {
-  // Aktif Tab: 'new_order' | 'orders' | 'summary' | 'menu_manage'
+  // Aktif Tab: 'new_order' | 'orders' | 'summary' | 'history' | 'menu_manage'
   const [activeTab, setActiveTab] = useState('new_order');
 
   // Menü Yönetimi State (LocalStorage Destekli)
@@ -72,6 +72,19 @@ export default function App() {
     }
   });
 
+  // Gün Sonu Geçmişi (LocalStorage)
+  const [dailyHistory, setDailyHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('kurye_daily_history_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Geçmiş Gün Detayı Modal State
+  const [selectedHistoryDay, setSelectedHistoryDay] = useState(null);
+
   // Bildirim mesajı
   const [toastMessage, setToastMessage] = useState('');
 
@@ -97,6 +110,15 @@ export default function App() {
       console.error("Storage error", e);
     }
   }, [orders]);
+
+  // Geçmiş günleri kaydet
+  useEffect(() => {
+    try {
+      localStorage.setItem('kurye_daily_history_v1', JSON.stringify(dailyHistory));
+    } catch (e) {
+      console.error("History storage error", e);
+    }
+  }, [dailyHistory]);
 
   // Dürüm ve İçecek Kategorilerine Ayırma
   const durumProducts = useMemo(() => products.filter(p => p.category === 'durum'), [products]);
@@ -383,33 +405,37 @@ export default function App() {
   const totalCourierCollected = summary.totalCash + summary.totalIban;
   const cashDifference = totalCourierCollected - summary.totalNetCourier;
 
-  const generateWhatsAppReport = () => {
-    const today = new Date().toLocaleDateString('tr-TR');
-    let text = `*🛵 GÜN SONU KURYE & KASA RAPORU* (${today})\n\n`;
-    text += `📦 *Toplam Paket:* ${summary.totalOrders} adet\n`;
-    text += `🌯 *Dürüm Adedi:* ${summary.totalDurum} adet\n`;
-    text += `🥤 *İçecek Adedi:* ${summary.totalDrinks} adet\n\n`;
-    text += `🏢 *Restoran Brüt Satış:* ${summary.totalRestaurantRaw.toLocaleString('tr-TR')} TL\n`;
-    if (summary.totalDiscount > 0) {
-      text += `🔻 *Patron İndirimi / Yuvarlama:* -${summary.totalDiscount.toLocaleString('tr-TR')} TL\n`;
+  const generateWhatsAppReport = (customSummary = null, customDate = null) => {
+    const s = customSummary || summary;
+    const dateStr = customDate || new Date().toLocaleDateString('tr-TR');
+    const collected = s.totalCash + s.totalIban;
+    const diff = collected - s.totalNetCourier;
+
+    let text = `*🛵 GÜN SONU KURYE & KASA RAPORU* (${dateStr})\n\n`;
+    text += `📦 *Toplam Paket:* ${s.totalOrders} adet\n`;
+    text += `🌯 *Dürüm Adedi:* ${s.totalDurum} adet\n`;
+    text += `🥤 *İçecek Adedi:* ${s.totalDrinks} adet\n\n`;
+    text += `🏢 *Restoran Brüt Satış:* ${s.totalRestaurantRaw.toLocaleString('tr-TR')} TL\n`;
+    if (s.totalDiscount > 0) {
+      text += `🔻 *Patron İndirimi / Yuvarlama:* -${s.totalDiscount.toLocaleString('tr-TR')} TL\n`;
     }
-    text += `🏢 *Restoran Net Menü (Patron):* ${summary.totalRestaurantNet.toLocaleString('tr-TR')} TL\n\n`;
+    text += `🏢 *Restoran Net Menü (Patron):* ${s.totalRestaurantNet.toLocaleString('tr-TR')} TL\n\n`;
     text += `💳 *TAHSİLAT DAĞILIMI:*\n`;
-    text += `• Nakit: ${summary.totalCash.toLocaleString('tr-TR')} TL\n`;
-    text += `• IBAN: ${summary.totalIban.toLocaleString('tr-TR')} TL\n`;
-    text += `• POS (Kart): ${summary.totalPos.toLocaleString('tr-TR')} TL\n`;
-    text += `• *Genel Tahsilat:* ${summary.totalCustomerRevenue.toLocaleString('tr-TR')} TL\n\n`;
-    text += `💰 *Kurye Brüt Paket Kazancı:* ${summary.totalGrossCourier.toLocaleString('tr-TR')} TL\n`;
-    text += `🧾 *POS Vergi Kesintisi (%10 KDV + %20 GV):* -${summary.totalTaxDeduction.toFixed(1)} TL\n`;
-    text += `⭐ *KURYE NET HAK EDİŞİ:* ${summary.totalNetCourier.toFixed(1)} TL\n\n`;
+    text += `• Nakit: ${s.totalCash.toLocaleString('tr-TR')} TL\n`;
+    text += `• IBAN: ${s.totalIban.toLocaleString('tr-TR')} TL\n`;
+    text += `• POS (Kart): ${s.totalPos.toLocaleString('tr-TR')} TL\n`;
+    text += `• *Genel Tahsilat:* ${s.totalCustomerRevenue.toLocaleString('tr-TR')} TL\n\n`;
+    text += `💰 *Kurye Brüt Paket Kazancı:* ${s.totalGrossCourier.toLocaleString('tr-TR')} TL\n`;
+    text += `🧾 *POS Vergi Kesintisi (%10 KDV + %20 GV):* -${s.totalTaxDeduction.toFixed(1)} TL\n`;
+    text += `⭐ *KURYE NET HAK EDİŞİ:* ${s.totalNetCourier.toFixed(1)} TL\n\n`;
     text += `🤝 *KASA MUTABAKATI & HESAPLAŞMA:*\n`;
-    text += `• Kurye Cebindeki (Nakit + IBAN): ${totalCourierCollected.toLocaleString('tr-TR')} TL\n`;
-    text += `• Kurye Net Kazancı: ${summary.totalNetCourier.toFixed(1)} TL\n`;
+    text += `• Kurye Üzerindeki (Nakit + IBAN): ${collected.toLocaleString('tr-TR')} TL\n`;
+    text += `• Kurye Net Kazancı: ${s.totalNetCourier.toFixed(1)} TL\n`;
     
-    if (cashDifference > 0) {
-      text += `👉 *KURYE PATRONA ${cashDifference.toFixed(1)} TL TESLİM EDECEK.*`;
-    } else if (cashDifference < 0) {
-      text += `👉 *PATRON KURYEYE ${Math.abs(cashDifference).toFixed(1)} TL ÖDEYECEK.*`;
+    if (diff > 0) {
+      text += `👉 *KURYE PATRONA ${diff.toFixed(1)} TL TESLİM EDECEK.*`;
+    } else if (diff < 0) {
+      text += `👉 *PATRON KURYEYE ${Math.abs(diff).toFixed(1)} TL ÖDEYECEK.*`;
     } else {
       text += `👉 *KASA TAM TAMINA DENK (0 TL fark).*`;
     }
@@ -418,12 +444,56 @@ export default function App() {
     showToast('Gün sonu raporu panoya kopyalandı!');
   };
 
+  // Günü Bitir & Arşivle
   const handleResetDay = () => {
-    if (window.confirm('DİKKAT: Bugünün tüm sipariş kayıtları silinecek ve kasa sıfırlanacak. Onaylıyor musunuz?')) {
+    if (orders.length === 0) {
+      if (window.confirm('Kayıtlı paket bulunmuyor. Kasa sıfırlansın mı?')) {
+        setOrders([]);
+        showToast('Kasa sıfırlandı.');
+      }
+      return;
+    }
+
+    if (window.confirm(`DİKKAT: Bugünün ${orders.length} siparişi geçmiş gün sonu özetlerine ARŞİVLENECEK ve bugünün kasası sıfırlanacak. Onaylıyor musunuz?`)) {
+      const todayRecord = {
+        id: `day_${Date.now()}`,
+        date: new Date().toLocaleDateString('tr-TR'),
+        rawDate: new Date().toISOString(),
+        summary: { ...summary },
+        orders: [...orders]
+      };
+
+      setDailyHistory([todayRecord, ...dailyHistory]);
       setOrders([]);
-      showToast('Günün verileri sıfırlandı.');
+      showToast('Gün sonu başarıyla arşivlendi ve kasa sıfırlandı! 📦📁');
     }
   };
+
+  // Aylık Kurye Kazancı Toplamı (Seçili Ay)
+  const currentMonthStats = useMemo(() => {
+    const currentMonthYear = new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+    let totalNetCourierMonth = 0;
+    let totalOrdersMonth = 0;
+
+    dailyHistory.forEach(day => {
+      const dayDate = new Date(day.rawDate);
+      const dayMonthYear = dayDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+      if (dayMonthYear === currentMonthYear) {
+        totalNetCourierMonth += day.summary.totalNetCourier || 0;
+        totalOrdersMonth += day.summary.totalOrders || 0;
+      }
+    });
+
+    // Bugün henüz sıfırlanmamış siparişler varsa onları da aya dahil et
+    totalNetCourierMonth += summary.totalNetCourier || 0;
+    totalOrdersMonth += summary.totalOrders || 0;
+
+    return {
+      monthLabel: currentMonthYear,
+      totalNetCourier: totalNetCourierMonth,
+      totalOrders: totalOrdersMonth
+    };
+  }, [dailyHistory, summary]);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans select-none pb-36">
@@ -437,7 +507,18 @@ export default function App() {
               <p className="text-xs text-amber-400 font-medium">Dürüm Başı: {overrideDeliveryFee ? 'Sabit' : `${perDurumFee}₺`}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={() => setActiveTab('history')}
+              title="Geçmiş Günler & Aylık Kazanç"
+              className={`p-2 rounded-full border transition ${
+                activeTab === 'history' 
+                  ? 'bg-blue-600 text-white border-blue-400' 
+                  : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
+              }`}
+            >
+              <History className="w-4 h-4" />
+            </button>
             <button
               onClick={() => setActiveTab('menu_manage')}
               title="Menü ve Fiyat Ayarları"
@@ -451,7 +532,7 @@ export default function App() {
             </button>
             <button 
               onClick={() => setActiveTab('summary')}
-              className="bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs px-2.5 py-1.5 rounded-full font-bold flex items-center gap-1 active:scale-95 transition"
+              className="bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs px-2.5 py-1.5 rounded-full font-bold flex items-center gap-1 active:scale-95 transition ml-1"
             >
               <span>Net:</span>
               <span className="font-mono">{summary.totalNetCourier.toFixed(0)} ₺</span>
@@ -690,7 +771,7 @@ export default function App() {
                             onClick={() => updateQuantity(item.id, 1)}
                             className="w-7 h-7 rounded-lg bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center font-bold active:scale-95 transition"
                           >
-                            <Plus className="w-3 h-3" />
+                            <Plus className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
@@ -1118,7 +1199,7 @@ export default function App() {
             <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={generateWhatsAppReport}
+                onClick={() => generateWhatsAppReport()}
                 className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition"
               >
                 <Share2 className="w-4 h-4" />
@@ -1128,17 +1209,115 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleResetDay}
-                className="w-full py-2.5 px-4 rounded-xl bg-neutral-900 hover:bg-red-950/40 text-neutral-400 hover:text-red-400 border border-neutral-800 hover:border-red-800/50 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                className="w-full py-2.5 px-4 rounded-xl bg-neutral-900 hover:bg-amber-950/40 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-800/50 text-xs font-semibold flex items-center justify-center gap-2 transition"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Günü Bitir & Verileri Sıfırla</span>
+                <span>Günü Bitir & Geçmişe Arşivle</span>
               </button>
             </div>
 
           </div>
         )}
 
-        {/* TAB 4: MENÜ & FİYAT YÖNETİMİ */}
+        {/* TAB 4: GEÇMİŞ GÜN ÖZETLERİ & AYLIK KAZANÇ */}
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            
+            {/* AYLIK KAZANÇ KARTI */}
+            <div className="bg-gradient-to-br from-blue-950/60 via-neutral-900 to-neutral-900 p-4 rounded-2xl border border-blue-500/40 shadow-xl space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs uppercase tracking-wider font-semibold text-blue-300 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-blue-400" />
+                  {currentMonthStats.monthLabel} Özeti
+                </span>
+                <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-bold">
+                  {currentMonthStats.totalOrders} Toplam Paket
+                </span>
+              </div>
+
+              <div>
+                <span className="text-xs text-neutral-400">Bu Ayki Net Kurye Kazancın:</span>
+                <div className="text-3xl font-black text-emerald-400 font-mono mt-0.5">
+                  {currentMonthStats.totalNetCourier.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} TL
+                </div>
+                <p className="text-[11px] text-neutral-500 mt-1">
+                  Arşivlenen geçmiş günler ve bugünkü aktif hakedişin toplamıdır.
+                </p>
+              </div>
+            </div>
+
+            {/* GEÇMİŞ GÜNLER LİSTESİ */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">
+                  Arşivlenen Günler ({dailyHistory.length})
+                </h3>
+                {dailyHistory.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Tüm geçmiş gün sonu arşivi kalıcı olarak silinecek. Emin misiniz?')) {
+                        setDailyHistory([]);
+                        showToast('Geçmiş arşiv temizlendi.');
+                      }
+                    }}
+                    className="text-[11px] text-rose-400 hover:underline flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" /> Arşivi Temizle
+                  </button>
+                )}
+              </div>
+
+              {dailyHistory.length === 0 ? (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-neutral-500 text-xs space-y-2">
+                  <History className="w-8 h-8 mx-auto text-neutral-600 opacity-60" />
+                  <p>Henüz arşivlenmiş gün sonu kaydı yok.</p>
+                  <p className="text-[11px] text-neutral-600">"Gün Sonu" sekmesindeki "Günü Bitir & Geçmişe Arşivle" butonuna bastığınızda günler burada toplanır.</p>
+                </div>
+              ) : (
+                dailyHistory.map((day) => {
+                  const s = day.summary;
+                  const collected = s.totalCash + s.totalIban;
+                  const diff = collected - s.totalNetCourier;
+
+                  return (
+                    <div
+                      key={day.id}
+                      onClick={() => setSelectedHistoryDay(day)}
+                      className="bg-neutral-900 hover:bg-neutral-850 border border-neutral-800 hover:border-neutral-700 p-3.5 rounded-2xl cursor-pointer transition flex items-center justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white font-mono">{day.date}</span>
+                          <span className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded font-mono">
+                            {s.totalOrders} Paket ({s.totalDurum} Dürüm)
+                          </span>
+                        </div>
+                        <div className="text-xs text-neutral-400">
+                          Genel Ciro: <span className="text-neutral-200 font-mono font-semibold">{s.totalCustomerRevenue} TL</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right flex items-center gap-2">
+                        <div>
+                          <div className="text-xs text-emerald-400 font-bold font-mono">
+                            Net: +{s.totalNetCourier.toFixed(1)} ₺
+                          </div>
+                          <div className={`text-[10px] font-mono ${diff >= 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                            {diff > 0 ? `Patrona: ${diff.toFixed(0)}₺` : diff < 0 ? `Alacak: ${Math.abs(diff).toFixed(0)}₺` : 'Denk'}
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-neutral-500" />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB 5: MENÜ & FİYAT YÖNETİMİ */}
         {activeTab === 'menu_manage' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center px-1">
@@ -1255,6 +1434,108 @@ export default function App() {
         )}
       </main>
 
+      {/* GEÇMİŞ GÜN DETAY MODALI */}
+      {selectedHistoryDay && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl w-full max-w-md p-4 space-y-3.5 shadow-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-blue-400" />
+                  <span>{selectedHistoryDay.date} Gün Sonu Detayı</span>
+                </h3>
+                <span className="text-[11px] text-neutral-400">{selectedHistoryDay.summary.totalOrders} Paket Tamamlandı</span>
+              </div>
+              <button 
+                onClick={() => setSelectedHistoryDay(null)}
+                className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Mutabakat Özeti */}
+            <div className="p-3 bg-neutral-950/70 border border-neutral-800 rounded-xl space-y-1 text-xs">
+              <div className="flex justify-between text-neutral-400">
+                <span>Kurye Üzerindeki (Nakit+IBAN):</span>
+                <span className="text-white font-mono font-bold">
+                  {(selectedHistoryDay.summary.totalCash + selectedHistoryDay.summary.totalIban).toLocaleString('tr-TR')} TL
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Kurye Net Hak Ediş:</span>
+                <span className="text-emerald-400 font-mono font-bold">
+                  {selectedHistoryDay.summary.totalNetCourier.toFixed(1)} TL
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-neutral-800 font-bold">
+                <span>Kasa Sonucu:</span>
+                <span className="text-amber-400 font-mono">
+                  {(selectedHistoryDay.summary.totalCash + selectedHistoryDay.summary.totalIban) - selectedHistoryDay.summary.totalNetCourier > 0
+                    ? `Kurye Patrona Verdi: ${((selectedHistoryDay.summary.totalCash + selectedHistoryDay.summary.totalIban) - selectedHistoryDay.summary.totalNetCourier).toFixed(1)} TL`
+                    : `Patron Kuryeye Verdi: ${Math.abs((selectedHistoryDay.summary.totalCash + selectedHistoryDay.summary.totalIban) - selectedHistoryDay.summary.totalNetCourier).toFixed(1)} TL`}
+                </span>
+              </div>
+            </div>
+
+            {/* Finansal Kalemler */}
+            <div className="bg-neutral-950/40 p-3 rounded-xl border border-neutral-800/80 space-y-1.5 text-xs">
+              <div className="flex justify-between text-neutral-400">
+                <span>Genel Tahsilat:</span>
+                <span className="text-white font-mono font-semibold">{selectedHistoryDay.summary.totalCustomerRevenue} TL</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Patron Net Menü:</span>
+                <span className="text-neutral-200 font-mono font-semibold">{selectedHistoryDay.summary.totalRestaurantNet} TL</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Kurye Brüt Paket:</span>
+                <span className="text-amber-400 font-mono font-semibold">+{selectedHistoryDay.summary.totalGrossCourier} TL</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>POS Vergi Kesintisi (%30):</span>
+                <span className="text-red-400 font-mono font-semibold">-{selectedHistoryDay.summary.totalTaxDeduction.toFixed(1)} TL</span>
+              </div>
+            </div>
+
+            {/* Tahsilat Dağılımı */}
+            <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
+              <div className="bg-neutral-950 p-2 rounded-lg border border-neutral-800">
+                <span className="text-[10px] text-emerald-400 block">Nakit</span>
+                <span className="font-mono font-bold text-white">{selectedHistoryDay.summary.totalCash} TL</span>
+              </div>
+              <div className="bg-neutral-950 p-2 rounded-lg border border-neutral-800">
+                <span className="text-[10px] text-blue-400 block">IBAN</span>
+                <span className="font-mono font-bold text-white">{selectedHistoryDay.summary.totalIban} TL</span>
+              </div>
+              <div className="bg-neutral-950 p-2 rounded-lg border border-neutral-800">
+                <span className="text-[10px] text-purple-400 block">POS</span>
+                <span className="font-mono font-bold text-white">{selectedHistoryDay.summary.totalPos} TL</span>
+              </div>
+            </div>
+
+            {/* Butonlar */}
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => generateWhatsAppReport(selectedHistoryDay.summary, selectedHistoryDay.date)}
+                className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Raporu Tekrar Kopyala</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedHistoryDay(null)}
+                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold transition"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Ürün Ekleme / Düzenleme Modalı */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1350,8 +1631,8 @@ export default function App() {
       )}
 
       {/* Alt Mobil Navigasyon Çubuğu */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 py-2 px-4">
-        <div className="max-w-md mx-auto grid grid-cols-4 gap-1">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 py-2 px-3">
+        <div className="max-w-md mx-auto grid grid-cols-5 gap-1">
           <button
             type="button"
             onClick={() => setActiveTab('new_order')}
@@ -1361,8 +1642,8 @@ export default function App() {
                 : 'text-neutral-400 hover:text-neutral-200'
             }`}
           >
-            <Plus className="w-5 h-5" />
-            <span className="text-[10px] mt-0.5">Yeni Paket</span>
+            <Plus className="w-4 h-4" />
+            <span className="text-[9px] mt-0.5">Yeni</span>
           </button>
 
           <button
@@ -1374,10 +1655,10 @@ export default function App() {
                 : 'text-neutral-400 hover:text-neutral-200'
             }`}
           >
-            <ShoppingBag className="w-5 h-5" />
-            <span className="text-[10px] mt-0.5">Paketler</span>
+            <ShoppingBag className="w-4 h-4" />
+            <span className="text-[9px] mt-0.5">Paketler</span>
             {orders.length > 0 && (
-              <span className="absolute top-1 right-4 w-4 h-4 rounded-full bg-amber-500 text-black text-[9px] font-bold flex items-center justify-center">
+              <span className="absolute top-1 right-2.5 w-3.5 h-3.5 rounded-full bg-amber-500 text-black text-[8px] font-bold flex items-center justify-center">
                 {orders.length}
               </span>
             )}
@@ -1392,8 +1673,21 @@ export default function App() {
                 : 'text-neutral-400 hover:text-neutral-200'
             }`}
           >
-            <DollarSign className="w-5 h-5" />
-            <span className="text-[10px] mt-0.5">Gün Sonu</span>
+            <DollarSign className="w-4 h-4" />
+            <span className="text-[9px] mt-0.5">Gün Sonu</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('history')}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition ${
+              activeTab === 'history' 
+                ? 'text-blue-400 bg-neutral-800/80 font-bold' 
+                : 'text-neutral-400 hover:text-neutral-200'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span className="text-[9px] mt-0.5">Geçmiş</span>
           </button>
 
           <button
@@ -1405,8 +1699,8 @@ export default function App() {
                 : 'text-neutral-400 hover:text-neutral-200'
             }`}
           >
-            <Settings className="w-5 h-5" />
-            <span className="text-[10px] mt-0.5">Menü/Fiyat</span>
+            <Settings className="w-4 h-4" />
+            <span className="text-[9px] mt-0.5">Menü</span>
           </button>
         </div>
       </nav>
